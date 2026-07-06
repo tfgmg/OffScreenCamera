@@ -1,0 +1,20 @@
+# Xcode
+DerivedData/
+*.xcuserstate
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+
+# Build
+build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS
+.DS_Store
+
+# Secrets
+*.p12
+*.mobileprovision
+ExportOptions.plist
