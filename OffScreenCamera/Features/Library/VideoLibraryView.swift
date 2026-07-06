@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import UIKit
 
 struct VideoLibraryView: View {
     @EnvironmentObject private var videoStorage: VideoStorage
