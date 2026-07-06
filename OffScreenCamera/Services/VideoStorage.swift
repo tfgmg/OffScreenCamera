@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Photos
 
@@ -13,6 +14,12 @@ final class VideoStorage: ObservableObject {
     }
 
     func refresh() {
+        Task {
+            await loadVideos()
+        }
+    }
+
+    func loadVideos() async {
         do {
             try fileManager.createDirectory(at: recordingsDirectory, withIntermediateDirectories: true)
 
@@ -21,76 +28,103 @@ final class VideoStorage: ObservableObject {
                 includingPropertiesForKeys: [.creationDateKey, .fileSizeKey],
                 options: [.skipsHiddenFiles]
             )
-            .filter { $0.pathExtension.lowercased() == "mov" || $0.pathExtension.lowercased() == "mp4" }
+            .filter { ["mov", "mp4"].contains($0.pathExtension.lowercased()) }
             .sorted { lhs, rhs in
                 let lhsDate = (try? lhs.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
                 let rhsDate = (try? rhs.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
                 return lhsDate > rhsDate
             }
 
-            videos = urls.compactMap { url in
+            var loaded: [RecordedVideo] = []
+            for url in urls {
                 guard
                     let values = try? url.resourceValues(forKeys: [.creationDateKey, .fileSizeKey]),
                     let createdAt = values.creationDate
-                else {
-                    return nil
-                }
+                else { continue }
 
-                return RecordedVideo(
+                let asset = AVURLAsset(url: url)
+                let duration = try? await asset.load(.duration).seconds
+
+                loaded.append(RecordedVideo(
                     id: UUID(),
                     url: url,
                     createdAt: createdAt,
-                    fileSize: Int64(values.fileSize ?? 0)
-                )
+                    fileSize: Int64(values.fileSize ?? 0),
+                    duration: duration
+                ))
             }
+            videos = loaded
         } catch {
             videos = []
         }
     }
 
-    func makeOutputURL() -> URL {
+    func makeOutputURL(segmentIndex: Int) -> URL {
         try? fileManager.createDirectory(at: recordingsDirectory, withIntermediateDirectories: true)
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss"
-        let name = "REC_\(formatter.string(from: Date())).mov"
+        let name = "REC_\(formatter.string(from: Date()))_\(String(format: "%03d", segmentIndex)).mov"
         return recordingsDirectory.appendingPathComponent(name)
     }
 
-    func delete(_ video: RecordedVideo) throws {
-        try fileManager.removeItem(at: video.url)
+    func makeMergedOutputURL() -> URL {
+        try? fileManager.createDirectory(at: recordingsDirectory, withIntermediateDirectories: true)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd_HHmmss"
+        return recordingsDirectory.appendingPathComponent("MERGE_\(formatter.string(from: Date())).mov")
+    }
+
+    func delete(_ videos: [RecordedVideo]) throws {
+        for video in videos {
+            try fileManager.removeItem(at: video.url)
+        }
         refresh()
     }
 
-    func exportToPhotoLibrary(_ video: RecordedVideo) async throws {
+    func exportToPhotoLibrary(_ videos: [RecordedVideo], deleteAfterExport: Bool) async throws {
         try await PHPhotoLibrary.requestAuthorization(for: .addOnly).checkAddOnlyAccess()
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            PHPhotoLibrary.shared().performChanges({
-                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: video.url)
-            }, completionHandler: { success, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else if success {
-                    continuation.resume()
-                } else {
-                    continuation.resume(throwing: CameraServiceError.recordingFailed("保存到相册失败"))
-                }
-            })
+        for video in videos {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                PHPhotoLibrary.shared().performChanges({
+                    PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: video.url)
+                }, completionHandler: { success, error in
+                    if let error { continuation.resume(throwing: error) }
+                    else if success { continuation.resume() }
+                    else { continuation.resume(throwing: CameraServiceError.recordingFailed("保存到相册失败")) }
+                })
+            }
         }
+
+        if deleteAfterExport {
+            try delete(videos)
+        }
+    }
+
+    func merge(_ videos: [RecordedVideo]) async throws -> RecordedVideo {
+        let outputURL = makeMergedOutputURL()
+        try await VideoMergeService.merge(videos: videos, outputURL: outputURL)
+        refresh()
+        guard let merged = self.videos.first(where: { $0.url == outputURL }) else {
+            throw CameraServiceError.recordingFailed("合并完成但找不到文件。")
+        }
+        return merged
     }
 }
 
 private extension PHAuthorizationStatus {
     func checkAddOnlyAccess() throws {
         switch self {
-        case .authorized, .limited:
-            return
-        case .notDetermined:
-            throw CameraServiceError.permissionDenied("请先允许访问相册。")
-        case .denied, .restricted:
-            throw CameraServiceError.permissionDenied("相册权限被拒绝，请到系统设置中开启。")
-        @unknown default:
-            throw CameraServiceError.permissionDenied("相册权限不可用。")
+        case .authorized, .limited: return
+        case .notDetermined: throw CameraServiceError.permissionDenied("请先允许访问相册。")
+        case .denied, .restricted: throw CameraServiceError.permissionDenied("相册权限被拒绝，请到系统设置中开启。")
+        @unknown default: throw CameraServiceError.permissionDenied("相册权限不可用。")
         }
+    }
+}
+
+private extension CMTime {
+    var seconds: TimeInterval {
+        CMTimeGetSeconds(self)
     }
 }

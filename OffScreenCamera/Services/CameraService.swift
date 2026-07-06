@@ -8,7 +8,15 @@ final class CameraService: NSObject, ObservableObject {
     @Published var cameraPosition: CameraPosition = .back
     @Published var isMicrophoneEnabled = true
     @Published var elapsedSeconds = 0
+    @Published var currentSegmentIndex = 1
     @Published var errorMessage: String?
+    @Published var qualitySettings = VideoQualitySettings()
+    @Published var lowLightBoostEnabled = true
+
+    var segmentDuration: TimeInterval = 600
+    var maxRecordingDuration: TimeInterval?
+    var onSegmentFinished: ((URL, Int) -> Void)?
+    var onRecordingStopped: ((RecordingStopReason) -> Void)?
 
     private let session = AVCaptureSession()
     private let movieOutput = AVCaptureMovieFileOutput()
@@ -17,12 +25,16 @@ final class CameraService: NSObject, ObservableObject {
     private var videoInput: AVCaptureDeviceInput?
     private var audioInput: AVCaptureDeviceInput?
     private var timerCancellable: AnyCancellable?
+    private var segmentTimer: Timer?
     private var recordingStartedAt: Date?
     private var currentOutputURL: URL?
+    private var nextOutputURL: URL?
+    private var isRotatingSegment = false
+    private var pendingStopReason: RecordingStopReason = .user
+    private var makeOutputURL: (() -> URL)?
 
     override init() {
         super.init()
-        session.sessionPreset = .high
     }
 
     func requestPermissions() async -> Bool {
@@ -57,52 +69,43 @@ final class CameraService: NSObject, ObservableObject {
         await startSessionIfNeeded()
     }
 
-    func startRecording(to url: URL) async throws {
+    func startRecordingSession(makeURL: @escaping () -> URL) async throws {
         guard !isRecording else { return }
+        makeOutputURL = makeURL
+        currentSegmentIndex = 1
 
         if !isSessionRunning {
             try await prepareSession()
         }
 
-        currentOutputURL = url
-
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            sessionQueue.async {
-                guard self.session.outputs.contains(self.movieOutput) else {
-                    continuation.resume(throwing: CameraServiceError.configurationFailed)
-                    return
-                }
-
-                if self.movieOutput.isRecording {
-                    continuation.resume(throwing: CameraServiceError.recordingFailed("相机仍在结束上一段录像。"))
-                    return
-                }
-
-                if let connection = self.movieOutput.connection(with: .video), connection.isVideoOrientationSupported {
-                    connection.videoOrientation = .portrait
-                }
-
-                if self.cameraPosition == .front,
-                   let connection = self.movieOutput.connection(with: .video),
-                   connection.isVideoMirroringSupported {
-                    connection.isVideoMirrored = true
-                }
-
-                self.movieOutput.startRecording(to: url, recordingDelegate: self)
-                continuation.resume()
-            }
-        }
+        let url = makeURL()
+        try await startSegmentRecording(to: url)
 
         isRecording = true
         recordingStartedAt = Date()
         elapsedSeconds = 0
         PowerGuard.setRecordingActive(true)
         startElapsedTimer()
+        scheduleSegmentRotation()
     }
 
-    func stopRecording() {
+    func stopRecording(reason: RecordingStopReason = .user) {
         guard isRecording else { return }
+        pendingStopReason = reason
+        isRotatingSegment = false
+        segmentTimer?.invalidate()
+        segmentTimer = nil
 
+        sessionQueue.async {
+            if self.movieOutput.isRecording {
+                self.movieOutput.stopRecording()
+            }
+        }
+    }
+
+    func rotateSegmentNow() {
+        guard isRecording, !isRotatingSegment else { return }
+        isRotatingSegment = true
         sessionQueue.async {
             if self.movieOutput.isRecording {
                 self.movieOutput.stopRecording()
@@ -115,19 +118,8 @@ final class CameraService: NSObject, ObservableObject {
             errorMessage = "录制中无法切换摄像头，请先停止。"
             return
         }
-
         cameraPosition = position
-
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            sessionQueue.async {
-                do {
-                    try self.reconfigureCameraInput()
-                    continuation.resume()
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
+        try await reconfigureCameraOnQueue()
     }
 
     func setMicrophoneEnabled(_ enabled: Bool) async throws {
@@ -146,20 +138,12 @@ final class CameraService: NSObject, ObservableObject {
         }
 
         isMicrophoneEnabled = enabled
-
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            sessionQueue.async {
-                do {
-                    try self.reconfigureAudioInput()
-                    continuation.resume()
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
+        try await reconfigureAudioOnQueue()
     }
 
     func tearDownSession() {
+        segmentTimer?.invalidate()
+        segmentTimer = nil
         sessionQueue.async {
             if self.movieOutput.isRecording {
                 self.movieOutput.stopRecording()
@@ -172,6 +156,70 @@ final class CameraService: NSObject, ObservableObject {
         isRecording = false
         PowerGuard.setRecordingActive(false)
         stopElapsedTimer()
+        makeOutputURL = nil
+    }
+
+    private func startSegmentRecording(to url: URL) async throws {
+        currentOutputURL = url
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            sessionQueue.async {
+                guard self.session.outputs.contains(self.movieOutput) else {
+                    continuation.resume(throwing: CameraServiceError.configurationFailed)
+                    return
+                }
+
+                if self.movieOutput.isRecording {
+                    continuation.resume(throwing: CameraServiceError.recordingFailed("相机仍在结束上一段录像。"))
+                    return
+                }
+
+                if let connection = self.movieOutput.connection(with: .video) {
+                    if connection.isVideoOrientationSupported {
+                        connection.videoOrientation = .portrait
+                    }
+                    if self.cameraPosition == .front, connection.isVideoMirroringSupported {
+                        connection.isVideoMirrored = true
+                    }
+                }
+
+                self.movieOutput.startRecording(to: url, recordingDelegate: self)
+                continuation.resume()
+            }
+        }
+    }
+
+    private func scheduleSegmentRotation() {
+        segmentTimer?.invalidate()
+        segmentTimer = Timer.scheduledTimer(withTimeInterval: segmentDuration, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.rotateSegmentNow() }
+        }
+    }
+
+    private func reconfigureCameraOnQueue() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            sessionQueue.async {
+                do {
+                    try self.reconfigureCameraInput()
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func reconfigureAudioOnQueue() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            sessionQueue.async {
+                do {
+                    try self.reconfigureAudioInput()
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 
     private func startSessionIfNeeded() async {
@@ -190,12 +238,15 @@ final class CameraService: NSObject, ObservableObject {
         session.beginConfiguration()
         defer { session.commitConfiguration() }
 
-        for input in session.inputs {
-            session.removeInput(input)
+        let preset = qualitySettings.resolution.sessionPreset
+        if session.canSetSessionPreset(preset) {
+            session.sessionPreset = preset
+        } else if session.canSetSessionPreset(.high) {
+            session.sessionPreset = .high
         }
-        for output in session.outputs {
-            session.removeOutput(output)
-        }
+
+        for input in session.inputs { session.removeInput(input) }
+        for output in session.outputs { session.removeOutput(output) }
         videoInput = nil
         audioInput = nil
 
@@ -233,12 +284,28 @@ final class CameraService: NSObject, ObservableObject {
             throw CameraServiceError.cameraUnavailable
         }
 
+        try configureDevice(device)
+
         let input = try AVCaptureDeviceInput(device: device)
         guard session.canAddInput(input) else {
             throw CameraServiceError.configurationFailed
         }
         session.addInput(input)
         videoInput = input
+    }
+
+    private func configureDevice(_ device: AVCaptureDevice) throws {
+        try device.lockForConfiguration()
+        defer { device.unlockForConfiguration() }
+
+        if device.isLowLightBoostSupported {
+            device.automaticallyEnablesLowLightBoostWhenAvailable = lowLightBoostEnabled
+        }
+
+        let fps = Double(qualitySettings.frameRate.rawValue)
+        let frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
+        device.activeVideoMinFrameDuration = frameDuration
+        device.activeVideoMaxFrameDuration = frameDuration
     }
 
     private func removeAudioInput() {
@@ -250,11 +317,9 @@ final class CameraService: NSObject, ObservableObject {
 
     private func addAudioInput() throws {
         guard isMicrophoneEnabled else { return }
-
         guard let device = AVCaptureDevice.default(for: .audio) else {
             throw CameraServiceError.microphoneUnavailable
         }
-
         let input = try AVCaptureDeviceInput(device: device)
         guard session.canAddInput(input) else {
             throw CameraServiceError.configurationFailed
@@ -265,28 +330,24 @@ final class CameraService: NSObject, ObservableObject {
 
     private func requestAccess(for mediaType: AVMediaType) async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: mediaType) {
-        case .authorized:
-            return true
+        case .authorized: return true
         case .notDetermined:
             return await withCheckedContinuation { continuation in
                 AVCaptureDevice.requestAccess(for: mediaType) { granted in
                     continuation.resume(returning: granted)
                 }
             }
-        case .denied, .restricted:
-            return false
-        @unknown default:
-            return false
+        case .denied, .restricted: return false
+        @unknown default: return false
         }
     }
 
     private static func cameraDevice(for position: AVCaptureDevice.Position) -> AVCaptureDevice? {
-        let discovery = AVCaptureDevice.DiscoverySession(
+        AVCaptureDevice.DiscoverySession(
             deviceTypes: [.builtInWideAngleCamera],
             mediaType: .video,
             position: position
-        )
-        return discovery.devices.first
+        ).devices.first
     }
 
     private func startElapsedTimer() {
@@ -296,27 +357,52 @@ final class CameraService: NSObject, ObservableObject {
             .sink { [weak self] _ in
                 guard let self, let recordingStartedAt else { return }
                 self.elapsedSeconds = Int(Date().timeIntervalSince(recordingStartedAt))
+                if let max = self.maxRecordingDuration, TimeInterval(self.elapsedSeconds) >= max {
+                    self.stopRecording(reason: .maxDuration)
+                }
             }
     }
 
     private func stopElapsedTimer() {
         timerCancellable?.cancel()
         timerCancellable = nil
-        recordingStartedAt = nil
     }
 
-    private func finishRecording(success: Bool) {
+    private func handleSegmentFinished(url: URL, error: Error?) {
+        if let error {
+            errorMessage = CameraServiceError.recordingFailed(error.localizedDescription).localizedDescription
+            finalizeStop(reason: pendingStopReason)
+            return
+        }
+
+        onSegmentFinished?(url, currentSegmentIndex)
+
+        if isRotatingSegment, isRecording, let makeOutputURL {
+            currentSegmentIndex += 1
+            isRotatingSegment = false
+            Task {
+                do {
+                    let nextURL = makeOutputURL()
+                    try await startSegmentRecording(to: nextURL)
+                } catch {
+                    errorMessage = error.localizedDescription
+                    finalizeStop(reason: .user)
+                }
+            }
+            return
+        }
+
+        finalizeStop(reason: pendingStopReason)
+    }
+
+    private func finalizeStop(reason: RecordingStopReason) {
         isRecording = false
         PowerGuard.setRecordingActive(false)
         stopElapsedTimer()
-
-        if !success {
-            if let url = currentOutputURL {
-                try? FileManager.default.removeItem(at: url)
-            }
-        }
-
+        segmentTimer?.invalidate()
+        segmentTimer = nil
         currentOutputURL = nil
+        onRecordingStopped?(reason)
     }
 }
 
@@ -326,9 +412,7 @@ extension CameraService: AVCaptureFileOutputRecordingDelegate {
         didStartRecordingTo fileURL: URL,
         from connections: [AVCaptureConnection]
     ) {
-        Task { @MainActor in
-            self.errorMessage = nil
-        }
+        Task { @MainActor in self.errorMessage = nil }
     }
 
     nonisolated func fileOutput(
@@ -338,12 +422,7 @@ extension CameraService: AVCaptureFileOutputRecordingDelegate {
         error: Error?
     ) {
         Task { @MainActor in
-            if let error {
-                self.errorMessage = CameraServiceError.recordingFailed(error.localizedDescription).localizedDescription
-                self.finishRecording(success: false)
-            } else {
-                self.finishRecording(success: true)
-            }
+            self.handleSegmentFinished(url: outputFileURL, error: error)
         }
     }
 }

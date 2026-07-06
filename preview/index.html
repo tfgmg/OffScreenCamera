@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>黑屏录像 App 界面预览</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0d0d0f;
+      color: #f2f2f2;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    h1 { font-size: 22px; font-weight: 600; margin-bottom: 8px; }
+    .subtitle { color: #888; font-size: 14px; margin-bottom: 24px; max-width: 720px; line-height: 1.6; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+    .tab {
+      background: #1c1c1e;
+      border: 1px solid #333;
+      color: #ccc;
+      padding: 8px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .tab.active { background: #fff; color: #000; border-color: #fff; }
+    .layout { display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start; }
+    .phone {
+      width: 300px;
+      height: 620px;
+      border: 3px solid #333;
+      border-radius: 36px;
+      overflow: hidden;
+      background: #000;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .notch {
+      width: 120px; height: 26px; background: #111;
+      border-radius: 0 0 16px 16px;
+      margin: 0 auto;
+      position: relative; z-index: 2;
+    }
+    .screen { height: calc(100% - 26px); overflow: hidden; position: relative; }
+    .panel { display: none; height: 100%; flex-direction: column; }
+    .panel.active { display: flex; }
+    .desc {
+      flex: 1; min-width: 260px; max-width: 420px;
+      background: #161618; border: 1px solid #2a2a2c;
+      border-radius: 16px; padding: 20px;
+    }
+    .desc h2 { font-size: 16px; margin-bottom: 12px; }
+    .desc ul { padding-left: 18px; color: #aaa; font-size: 14px; line-height: 1.8; }
+    .desc .note { margin-top: 16px; padding: 12px; background: #1f1f22; border-radius: 10px; font-size: 13px; color: #888; line-height: 1.6; }
+
+    /* Calculator */
+    .calc { background: #000; padding: 16px; height: 100%; display: flex; flex-direction: column; }
+    .calc-display { font-size: 48px; text-align: right; padding: 40px 8px 24px; font-weight: 300; flex: 1; }
+    .calc-row { display: flex; gap: 10px; margin-bottom: 10px; justify-content: center; }
+    .calc-btn {
+      width: 64px; height: 64px; border-radius: 50%; border: none;
+      font-size: 22px; cursor: default;
+    }
+    .calc-btn.gray { background: #a6a6a6; color: #000; }
+    .calc-btn.dark { background: #333; color: #fff; }
+    .calc-btn.orange { background: #ff9500; color: #fff; }
+    .calc-btn.wide { width: 138px; border-radius: 32px; }
+
+    /* Home */
+    .home { background: linear-gradient(180deg, #141418, #000); padding: 20px; height: 100%; overflow-y: auto; }
+    .home-title { text-align: center; margin: 20px 0; }
+    .home-title .icon { font-size: 36px; margin-bottom: 8px; }
+    .home-title h3 { font-size: 17px; margin-bottom: 6px; }
+    .home-title p { font-size: 11px; color: #888; line-height: 1.5; }
+    .card { background: rgba(255,255,255,.08); border-radius: 16px; padding: 16px; margin-bottom: 16px; }
+    .seg { display: flex; background: #333; border-radius: 8px; overflow: hidden; margin-top: 8px; }
+    .seg span { flex: 1; text-align: center; padding: 8px; font-size: 13px; color: #888; }
+    .seg span.on { background: #666; color: #fff; }
+    .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 14px; }
+    .toggle { width: 44px; height: 26px; background: #34c759; border-radius: 13px; position: relative; }
+    .toggle::after { content: ""; width: 22px; height: 22px; background: #fff; border-radius: 50%; position: absolute; top: 2px; right: 2px; }
+    .btn-primary { background: #fff; color: #000; border: none; width: 100%; padding: 14px; border-radius: 14px; font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+    .btn-secondary { background: transparent; color: #fff; border: 1px solid #555; width: 100%; padding: 12px; border-radius: 14px; font-size: 14px; }
+    .tabbar { display: flex; border-top: 1px solid #222; margin-top: auto; padding: 10px 0 16px; background: #0a0a0a; }
+    .tabbar-item { flex: 1; text-align: center; font-size: 10px; color: #666; }
+    .tabbar-item.on { color: #fff; }
+
+    /* Recording */
+    .recording { background: #000; height: 100%; position: relative; }
+    .rec-badge {
+      position: absolute; top: 16px; left: 16px;
+      background: rgba(255,255,255,.08); padding: 6px 12px; border-radius: 999px;
+      font-size: 11px; display: flex; align-items: center; gap: 6px;
+    }
+    .dot { width: 8px; height: 8px; background: #ff3b30; border-radius: 50%; }
+    .rec-time { position: absolute; top: 16px; right: 16px; font-size: 11px; color: rgba(255,255,255,.3); text-align: right; }
+    .rec-hint { position: absolute; bottom: 40px; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,.18); }
+
+    /* Library */
+    .library { background: #000; height: 100%; display: flex; flex-direction: column; }
+    .nav { padding: 14px 16px; font-size: 16px; font-weight: 600; border-bottom: 1px solid #222; display: flex; justify-content: space-between; }
+    .nav small { font-size: 13px; color: #0a84ff; font-weight: 400; }
+    .file-item { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #1a1a1a; align-items: center; }
+    .file-item .check { color: #0a84ff; font-size: 18px; }
+    .file-meta { font-size: 11px; color: #666; margin-top: 2px; }
+    .batch-bar { margin-top: auto; padding: 12px 16px; background: rgba(30,30,30,.95); display: flex; gap: 8px; font-size: 12px; border-top: 1px solid #333; }
+    .batch-bar button { background: #2c2c2e; border: none; color: #fff; padding: 8px 10px; border-radius: 8px; font-size: 11px; }
+
+    /* Settings */
+    .settings { background: #000; height: 100%; overflow-y: auto; }
+    .section { padding: 12px 16px 4px; font-size: 12px; color: #666; text-transform: uppercase; }
+    .row { padding: 12px 16px; border-bottom: 1px solid #1a1a1a; display: flex; justify-content: space-between; font-size: 14px; }
+    .row span:last-child { color: #888; }
+  </style>
+</head>
+<body>
+  <h1>黑屏录像 · 界面预览</h1>
+  <p class="subtitle">这是 Windows 浏览器里的<strong>静态界面模拟</strong>，方便先看布局和流程。真机交互（摄像头、音量键、Face ID）需要编译 ipa 装到 iPhone 后才能体验。</p>
+
+  <div class="tabs">
+    <button class="tab active" data-screen="calc">1. 伪装计算器</button>
+    <button class="tab" data-screen="home">2. 录制主页</button>
+    <button class="tab" data-screen="rec">3. 黑屏录制</button>
+    <button class="tab" data-screen="files">4. 文件管理</button>
+    <button class="tab" data-screen="settings">5. 设置</button>
+  </div>
+
+  <div class="layout">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="screen">
+        <div class="panel active" id="calc">
+          <div class="calc">
+            <div class="calc-display">1234</div>
+            <div class="calc-row">
+              <button class="calc-btn gray">AC</button>
+              <button class="calc-btn gray">±</button>
+              <button class="calc-btn gray">%</button>
+              <button class="calc-btn orange">÷</button>
+            </div>
+            <div class="calc-row">
+              <button class="calc-btn dark">7</button>
+              <button class="calc-btn dark">8</button>
+              <button class="calc-btn dark">9</button>
+              <button class="calc-btn orange">×</button>
+            </div>
+            <div class="calc-row">
+              <button class="calc-btn dark">4</button>
+              <button class="calc-btn dark">5</button>
+              <button class="calc-btn dark">6</button>
+              <button class="calc-btn orange">−</button>
+            </div>
+            <div class="calc-row">
+              <button class="calc-btn dark">1</button>
+              <button class="calc-btn dark">2</button>
+              <button class="calc-btn dark">3</button>
+              <button class="calc-btn orange">+</button>
+            </div>
+            <div class="calc-row">
+              <button class="calc-btn dark wide">0</button>
+              <button class="calc-btn dark">.</button>
+              <button class="calc-btn orange">=</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" id="home">
+          <div class="home">
+            <div class="home-title">
+              <div class="icon">🌙</div>
+              <h3>伪息屏摄像头录像</h3>
+              <p>分段 10 分钟 · 1080p · 音量+×3 开始 / 音量-×3 停止</p>
+            </div>
+            <div class="card">
+              <div style="font-size:13px;color:#ccc;margin-bottom:4px">摄像头</div>
+              <div class="seg"><span>后置</span><span class="on">前置</span></div>
+              <div class="toggle-row"><span>录制声音</span><div class="toggle"></div></div>
+            </div>
+            <button class="btn-primary">开始黑屏录像</button>
+            <button class="btn-secondary">息屏并开始录制</button>
+            <div class="tabbar">
+              <div class="tabbar-item on">录制</div>
+              <div class="tabbar-item">文件</div>
+              <div class="tabbar-item">设置</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" id="rec">
+          <div class="recording">
+            <div class="rec-badge"><span class="dot"></span>录像中</div>
+            <div class="rec-time">02:35<br>段 1</div>
+            <div class="rec-hint">音量- ×3 停止录像</div>
+          </div>
+        </div>
+
+        <div class="panel" id="files">
+          <div class="library">
+            <div class="nav">录像文件 <small>全选</small></div>
+            <div class="file-item">
+              <span class="check">☑</span>
+              <div><div>REC_20260707_001.mov</div><div class="file-meta">今天 10:30 · 09:58 · 128 MB</div></div>
+            </div>
+            <div class="file-item">
+              <span class="check">☑</span>
+              <div><div>REC_20260707_002.mov</div><div class="file-meta">今天 10:40 · 10:00 · 132 MB</div></div>
+            </div>
+            <div class="file-item">
+              <span class="check">○</span>
+              <div><div>MERGE_20260707.mov</div><div class="file-meta">今天 11:00 · 19:58 · 256 MB</div></div>
+            </div>
+            <div class="batch-bar">
+              <span style="color:#888;align-self:center">已选 2</span>
+              <button>合并</button><button>导出</button><button>分享</button><button>删除</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" id="settings">
+          <div class="settings">
+            <div class="nav" style="border:none">设置</div>
+            <div class="section">录制</div>
+            <div class="row">分段时长 <span>10 分钟 ›</span></div>
+            <div class="row">最长录制 <span>不限 ›</span></div>
+            <div class="row">低光增强 <span>开</span></div>
+            <div class="section">画质</div>
+            <div class="row">分辨率 <span>1080p ›</span></div>
+            <div class="row">帧率 <span>30 fps ›</span></div>
+            <div class="row">码率 <span>中 ›</span></div>
+            <div class="section">安全</div>
+            <div class="row">计算器伪装 <span>开</span></div>
+            <div class="row">Face ID <span>开</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="desc" id="desc">
+      <h2>伪装计算器入口</h2>
+      <ul>
+        <li>打开 App 先看到计算器，不会暴露真实用途</li>
+        <li>输入密码后按 <strong>=</strong> 解锁</li>
+        <li>若开启 Face ID，可刷脸直接进入</li>
+      </ul>
+      <div class="note">真机预览：需 push 代码 → GitHub Actions 编译 ipa → Sideloadly 装到 iPhone。</div>
+    </div>
+  </div>
+
+  <script>
+    const descs = {
+      calc: { title: '伪装计算器入口', items: ['打开 App 先看到计算器', '输入密码后按 = 解锁', '可配合 Face ID 快捷进入'], note: '切到后台再打开会重新显示计算器。' },
+      home: { title: '录制主页', items: ['选择前置/后置、是否录音', '「开始黑屏录像」进入全黑界面', '「息屏并开始」同样进入黑屏录制', '音量+ 连按 3 次也可开始'], note: '画质、分段时长等在「设置」里改。' },
+      rec: { title: '黑屏录制中', items: ['屏幕全黑，可手动调低亮度', '左上角显示录像状态（可做得很淡）', '每 N 分钟自动切下一段，不停录', '音量- 连按 3 次停止'], note: '系统相机绿点仍会出现，无法隐藏。' },
+      files: { title: '文件管理', items: ['全选 / 多选文件', '批量合并、导出相册、分享、删除', '可设置导出后自动删 App 内副本'], note: '文件默认只存在 App 内，更安全。' },
+      settings: { title: '设置', items: ['分段时长：5/10/15/30 分钟', '画质：分辨率、帧率、码率', '最长录制、低光增强', '伪装入口、Face ID、改密码'], note: '无定时启停（按你的要求已去掉）。' }
+    };
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.screen).classList.add('active');
+        const d = descs[tab.dataset.screen];
+        document.getElementById('desc').innerHTML = `<h2>${d.title}</h2><ul>${d.items.map(i=>'<li>'+i+'</li>').join('')}</ul><div class="note">${d.note}</div>`;
+      });
+    });
+  </script>
+</body>
+</html>
