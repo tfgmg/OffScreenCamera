@@ -1,10 +1,17 @@
 import AVFoundation
+import Combine
 import Foundation
 import UIKit
 
 @MainActor
 final class SystemProtectionMonitor: ObservableObject {
     @Published var warningMessage: String?
+    private var interruptionObserver: NSObjectProtocol?
+    deinit {
+        if let interruptionObserver {
+            NotificationCenter.default.removeObserver(interruptionObserver)
+        }
+    }
 
     func checkStorage(minimumFreeBytes: Int64 = 500_000_000) -> Bool {
         guard let free = freeDiskSpace else { return true }
@@ -26,7 +33,11 @@ final class SystemProtectionMonitor: ObservableObject {
     }
 
     func setupInterruptionHandler(onInterruption: @escaping () -> Void) {
-        NotificationCenter.default.addObserver(
+        if let interruptionObserver {
+            NotificationCenter.default.removeObserver(interruptionObserver)
+        }
+
+        interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
             object: nil,
             queue: .main

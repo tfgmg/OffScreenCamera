@@ -47,9 +47,9 @@ struct HomeView: View {
                 settings.applyToCameraService(cameraService)
                 videoStorage.refresh()
                 volumeMonitor.onVolumeUpTriple = {
-                guard !cameraService.isRecording, !isPreparing, !isRecordingPresented else { return }
-                Task { await startRecordingFlow() }
-            }
+                    guard !cameraService.isRecording, !isPreparing, !isRecordingPresented else { return }
+                    Task { await startRecordingFlow() }
+                }
                 volumeMonitor.start()
             }
             .onDisappear {
@@ -200,8 +200,13 @@ struct HomeView: View {
     private func handleRecordingDismiss() {
         if cameraService.isRecording {
             cameraService.stopRecording(reason: .user)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                cameraService.tearDownSession()
+                videoStorage.refresh()
+            }
+        } else {
+            cameraService.tearDownSession()
+            videoStorage.refresh()
         }
-        cameraService.tearDownSession()
-        videoStorage.refresh()
     }
 }

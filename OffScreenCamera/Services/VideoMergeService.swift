@@ -40,13 +40,16 @@ enum VideoMergeService {
         export.outputURL = outputURL
         export.outputFileType = .mov
 
-        await export.export()
-
-        if let error = export.error {
-            throw error
-        }
-        guard export.status == .completed else {
-            throw CameraServiceError.recordingFailed("合并失败。")
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            export.exportAsynchronously {
+                if let error = export.error {
+                    continuation.resume(throwing: error)
+                } else if export.status == .completed {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: CameraServiceError.recordingFailed("合并失败。"))
+                }
+            }
         }
     }
 }

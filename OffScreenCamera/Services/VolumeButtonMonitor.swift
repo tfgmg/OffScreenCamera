@@ -1,8 +1,8 @@
 import AVFoundation
+import Combine
 import MediaPlayer
 import UIKit
 
-@MainActor
 final class VolumeButtonMonitor: ObservableObject {
     var onVolumeUpTriple: (() -> Void)?
     var onVolumeDownTriple: (() -> Void)?
@@ -30,15 +30,15 @@ final class VolumeButtonMonitor: ObservableObject {
         view.isHidden = false
         view.alpha = 0.01
         window.rootViewController = UIViewController()
-        window.windowLevel = .alert - 1
+        window.windowLevel = UIWindow.Level(UIWindow.Level.alert.rawValue - 1)
         window.isHidden = false
         window.rootViewController?.view.addSubview(view)
         volumeView = view
 
         observation = session.observe(\.outputVolume, options: [.new, .old]) { [weak self] _, change in
-            guard let self, let newValue = change.newValue, let oldValue = change.oldValue else { return }
-            Task { @MainActor in
-                self.handleVolumeChange(from: oldValue, to: newValue)
+            guard let newValue = change.newValue, let oldValue = change.oldValue else { return }
+            DispatchQueue.main.async {
+                self?.handleVolumeChange(from: oldValue, to: newValue)
             }
         }
     }

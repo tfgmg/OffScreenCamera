@@ -28,7 +28,6 @@ final class CameraService: NSObject, ObservableObject {
     private var segmentTimer: Timer?
     private var recordingStartedAt: Date?
     private var currentOutputURL: URL?
-    private var nextOutputURL: URL?
     private var isRotatingSegment = false
     private var pendingStopReason: RecordingStopReason = .user
     private var makeOutputURL: (() -> URL)?
@@ -156,6 +155,7 @@ final class CameraService: NSObject, ObservableObject {
         isRecording = false
         PowerGuard.setRecordingActive(false)
         stopElapsedTimer()
+        recordingStartedAt = nil
         makeOutputURL = nil
     }
 
@@ -303,9 +303,13 @@ final class CameraService: NSObject, ObservableObject {
         }
 
         let fps = Double(qualitySettings.frameRate.rawValue)
-        let frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
-        device.activeVideoMinFrameDuration = frameDuration
-        device.activeVideoMaxFrameDuration = frameDuration
+        if device.activeFormat.videoSupportedFrameRateRanges.contains(where: {
+            $0.minFrameRate <= fps && fps <= $0.maxFrameRate
+        }) {
+            let frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
+            device.activeVideoMinFrameDuration = frameDuration
+            device.activeVideoMaxFrameDuration = frameDuration
+        }
     }
 
     private func removeAudioInput() {
@@ -399,6 +403,7 @@ final class CameraService: NSObject, ObservableObject {
         isRecording = false
         PowerGuard.setRecordingActive(false)
         stopElapsedTimer()
+        recordingStartedAt = nil
         segmentTimer?.invalidate()
         segmentTimer = nil
         currentOutputURL = nil

@@ -1,3 +1,4 @@
+import Combine
 import CryptoKit
 import Foundation
 import LocalAuthentication
@@ -12,6 +13,9 @@ final class AppLockService: ObservableObject {
 
     private let pinKey = "com.offscreen.camera.pinHash"
     private let service = "com.offscreen.camera.lock"
+    private let failedAttemptsKey = "lock.failedAttempts"
+    private let lockedUntilKey = "lock.lockedUntil"
+    private let defaults = UserDefaults.standard
 
     init() {
         hasPIN = KeychainHelper.read(key: pinKey, service: service) != nil
@@ -29,9 +33,16 @@ final class AppLockService: ObservableObject {
     }
 
     func verifyPIN(_ pin: String) -> Bool {
+        guard !isTemporarilyLocked else { return false }
         guard let stored = KeychainHelper.read(key: pinKey, service: service) else { return false }
         let valid = stored == Self.hash(pin)
-        if valid { isUnlocked = true }
+        if valid {
+            defaults.set(0, forKey: failedAttemptsKey)
+            defaults.removeObject(forKey: lockedUntilKey)
+            isUnlocked = true
+        } else {
+            registerFailedAttempt()
+        }
         return valid
     }
 
@@ -70,6 +81,20 @@ final class AppLockService: ObservableObject {
         let digest = SHA256.hash(data: Data(pin.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
+
+    private var isTemporarilyLocked: Bool {
+        Date().timeIntervalSince1970 < defaults.double(forKey: lockedUntilKey)
+    }
+
+    private func registerFailedAttempt() {
+        let attempts = defaults.integer(forKey: failedAttemptsKey) + 1
+        defaults.set(attempts, forKey: failedAttemptsKey)
+
+        if attempts >= 5 {
+            defaults.set(Date().addingTimeInterval(60).timeIntervalSince1970, forKey: lockedUntilKey)
+            defaults.set(0, forKey: failedAttemptsKey)
+        }
+    }
 }
 
 enum AppLockError: LocalizedError {
@@ -95,6 +120,7 @@ enum KeychainHelper {
         SecItemDelete(query as CFDictionary)
         var add = query
         add[kSecValueData as String] = data
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         let status = SecItemAdd(add as CFDictionary, nil)
         guard status == errSecSuccess else { throw AppLockError.invalidPIN }
     }

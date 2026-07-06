@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import Foundation
 import Photos
 
@@ -13,6 +14,14 @@ final class VideoStorage: ObservableObject {
         return documents.appendingPathComponent("Recordings", isDirectory: true)
     }
 
+    private func ensureRecordingsDirectory() throws {
+        try fileManager.createDirectory(at: recordingsDirectory, withIntermediateDirectories: true)
+        try? fileManager.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: recordingsDirectory.path
+        )
+    }
+
     func refresh() {
         Task {
             await loadVideos()
@@ -21,7 +30,7 @@ final class VideoStorage: ObservableObject {
 
     func loadVideos() async {
         do {
-            try fileManager.createDirectory(at: recordingsDirectory, withIntermediateDirectories: true)
+            try ensureRecordingsDirectory()
 
             let urls = try fileManager.contentsOfDirectory(
                 at: recordingsDirectory,
@@ -60,7 +69,7 @@ final class VideoStorage: ObservableObject {
     }
 
     func makeOutputURL(segmentIndex: Int) -> URL {
-        try? fileManager.createDirectory(at: recordingsDirectory, withIntermediateDirectories: true)
+        try? ensureRecordingsDirectory()
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss"
         let name = "REC_\(formatter.string(from: Date()))_\(String(format: "%03d", segmentIndex)).mov"
@@ -68,7 +77,7 @@ final class VideoStorage: ObservableObject {
     }
 
     func makeMergedOutputURL() -> URL {
-        try? fileManager.createDirectory(at: recordingsDirectory, withIntermediateDirectories: true)
+        try? ensureRecordingsDirectory()
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss"
         return recordingsDirectory.appendingPathComponent("MERGE_\(formatter.string(from: Date())).mov")
@@ -104,10 +113,18 @@ final class VideoStorage: ObservableObject {
     func merge(_ videos: [RecordedVideo]) async throws -> RecordedVideo {
         let outputURL = makeMergedOutputURL()
         try await VideoMergeService.merge(videos: videos, outputURL: outputURL)
-        refresh()
-        guard let merged = self.videos.first(where: { $0.url == outputURL }) else {
-            throw CameraServiceError.recordingFailed("合并完成但找不到文件。")
-        }
+
+        let values = try outputURL.resourceValues(forKeys: [.creationDateKey, .fileSizeKey])
+        let asset = AVURLAsset(url: outputURL)
+        let duration = try? await asset.load(.duration).seconds
+        let merged = RecordedVideo(
+            id: UUID(),
+            url: outputURL,
+            createdAt: values.creationDate ?? Date(),
+            fileSize: Int64(values.fileSize ?? 0),
+            duration: duration
+        )
+        await loadVideos()
         return merged
     }
 }
