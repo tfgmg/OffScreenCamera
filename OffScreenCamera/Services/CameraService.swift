@@ -1,7 +1,6 @@
 import AVFoundation
 import Combine
 
-@MainActor
 final class CameraService: NSObject, ObservableObject {
     @Published var isRecording = false
     @Published var isSessionRunning = false
@@ -372,6 +371,7 @@ final class CameraService: NSObject, ObservableObject {
         timerCancellable = nil
     }
 
+    @MainActor
     private func handleSegmentFinished(url: URL, error: Error?) {
         if let error {
             errorMessage = CameraServiceError.recordingFailed(error.localizedDescription).localizedDescription
