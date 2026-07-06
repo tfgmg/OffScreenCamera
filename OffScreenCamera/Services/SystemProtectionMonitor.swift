@@ -7,9 +7,11 @@ import UIKit
 final class SystemProtectionMonitor: ObservableObject {
     @Published var warningMessage: String?
     private var interruptionObserver: NSObjectProtocol?
-    deinit {
+
+    func stopMonitoring() {
         if let interruptionObserver {
             NotificationCenter.default.removeObserver(interruptionObserver)
+            self.interruptionObserver = nil
         }
     }
 

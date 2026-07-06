@@ -60,6 +60,7 @@ struct RecordingView: View {
         }
         .onDisappear {
             volumeMonitor.stop()
+            protection.stopMonitoring()
             protectionTimer?.invalidate()
         }
     }
