@@ -34,7 +34,7 @@ final class SystemProtectionMonitor: ObservableObject {
         return true
     }
 
-    func setupInterruptionHandler(onInterruption: @escaping () -> Void) {
+    func setupInterruptionHandler(onInterruption: @escaping @MainActor () -> Void) {
         if let interruptionObserver {
             NotificationCenter.default.removeObserver(interruptionObserver)
         }
@@ -50,7 +50,9 @@ final class SystemProtectionMonitor: ObservableObject {
                 let type = AVAudioSession.InterruptionType(rawValue: typeValue),
                 type == .began
             else { return }
-            onInterruption()
+            Task { @MainActor in
+                onInterruption()
+            }
         }
     }
 

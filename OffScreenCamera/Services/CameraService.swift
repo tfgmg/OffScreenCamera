@@ -384,7 +384,7 @@ final class CameraService: NSObject, ObservableObject {
         if isRotatingSegment, isRecording, let makeOutputURL {
             currentSegmentIndex += 1
             isRotatingSegment = false
-            Task {
+            Task { @MainActor in
                 do {
                     let nextURL = makeOutputURL()
                     try await startSegmentRecording(to: nextURL)

@@ -73,9 +73,9 @@ final class VolumeButtonMonitor: ObservableObject {
             pressTimestamps.removeAll()
             switch direction {
             case .up:
-                Task { @MainActor in self.onVolumeUpTriple?() }
+                Task { @MainActor [weak self] in self?.onVolumeUpTriple?() }
             case .down:
-                Task { @MainActor in self.onVolumeDownTriple?() }
+                Task { @MainActor [weak self] in self?.onVolumeDownTriple?() }
             }
         }
     }

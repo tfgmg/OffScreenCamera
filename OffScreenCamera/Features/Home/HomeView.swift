@@ -175,6 +175,7 @@ struct HomeView: View {
         }
     }
 
+    @MainActor
     private func setupRecordingCallbacks() {
         cameraService.onSegmentFinished = { _, _ in
             videoStorage.refresh()
