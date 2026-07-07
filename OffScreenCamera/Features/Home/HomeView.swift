@@ -178,17 +178,17 @@ struct HomeView: View {
     }
 
     @MainActor
-    private func setupRecordingCallbacks() {
-        cameraService.onSegmentFinished = { _, _ in
-    videoStorage.refresh()
-}
-cameraService.onRecordingStopped = { reason in
-    if reason != .user && reason != .volumeKey {
-        alertMessage = stopReasonMessage(reason)
+private func setupRecordingCallbacks() {
+    cameraService.onSegmentFinished = { _, _ in
+        videoStorage.refresh()
     }
-    videoStorage.refresh()
+    cameraService.onRecordingStopped = { reason in
+        if reason != .user && reason != .volumeKey {
+            alertMessage = stopReasonMessage(reason)
+        }
+        videoStorage.refresh()
+    }
 }
-
     private func stopReasonMessage(_ reason: RecordingStopReason) -> String {
         switch reason {
         case .maxDuration: return "已达到最长录制时间。"
