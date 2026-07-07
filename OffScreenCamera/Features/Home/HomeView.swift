@@ -179,16 +179,15 @@ struct HomeView: View {
 
     @MainActor
     private func setupRecordingCallbacks() {
-        cameraService.onSegmentFinished = { @MainActor _, _ in
-            videoStorage.refresh()
-        }
-        cameraService.onRecordingStopped = { @MainActor reason in
-            if reason != .user && reason != .volumeKey {
-                alertMessage = stopReasonMessage(reason)
-            }
-            videoStorage.refresh()
-        }
+        cameraService.onSegmentFinished = { _, _ in
+    videoStorage.refresh()
+}
+cameraService.onRecordingStopped = { reason in
+    if reason != .user && reason != .volumeKey {
+        alertMessage = stopReasonMessage(reason)
     }
+    videoStorage.refresh()
+}
 
     private func stopReasonMessage(_ reason: RecordingStopReason) -> String {
         switch reason {
