@@ -4,7 +4,9 @@ options:
   deploymentTarget:
     iOS: "17.0"
   xcodeVersion: "15.0"
+  projectFormat: xcode15_3
   createIntermediateGroups: true
+  postGenCommand: sed -i '' -E 's|objectVersion = [0-9]+|objectVersion = 60|' OffScreenCamera.xcodeproj/project.pbxproj
 
 settings:
   base:
