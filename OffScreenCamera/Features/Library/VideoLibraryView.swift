@@ -174,7 +174,7 @@ struct VideoLibraryView: View {
     }
 
     private func shareSelected() {
-        guard let first = selectedURLs.first else { return }
+        guard !selectedURLs.isEmpty else { return }
         let controller = UIActivityViewController(activityItems: selectedURLs, applicationActivities: nil)
         if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
            let root = scene.windows.first?.rootViewController {

@@ -39,12 +39,12 @@ struct RecordingView: View {
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .onAppear {
-            volumeMonitor.onVolumeDownTriple = { @MainActor in
+            volumeMonitor.onVolumeDownTriple = {
                 stopAndDismiss(reason: .volumeKey)
             }
             volumeMonitor.start()
 
-            protection.setupInterruptionHandler { @MainActor in
+            protection.setupInterruptionHandler {
                 stopAndDismiss(reason: .interruption)
             }
 

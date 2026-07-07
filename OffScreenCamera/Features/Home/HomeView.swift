@@ -48,7 +48,7 @@ struct HomeView: View {
             .onAppear {
                 settings.applyToCameraService(cameraService)
                 videoStorage.refresh()
-                volumeMonitor.onVolumeUpTriple = { @MainActor in
+                volumeMonitor.onVolumeUpTriple = {
                     guard !cameraService.isRecording, !isPreparing, !isRecordingPresented else { return }
                     Task { @MainActor in await startRecordingFlow() }
                 }
@@ -168,7 +168,7 @@ struct HomeView: View {
 
         do {
             try await cameraService.prepareSession()
-            try await cameraService.startRecordingSession { @MainActor in
+            try await cameraService.startRecordingSession {
                 videoStorage.makeOutputURL(segmentIndex: cameraService.currentSegmentIndex)
             }
             isRecordingPresented = true
@@ -178,17 +178,18 @@ struct HomeView: View {
     }
 
     @MainActor
-private func setupRecordingCallbacks() {
-    cameraService.onSegmentFinished = { _, _ in
-        videoStorage.refresh()
-    }
-    cameraService.onRecordingStopped = { reason in
-        if reason != .user && reason != .volumeKey {
-            alertMessage = stopReasonMessage(reason)
+    private func setupRecordingCallbacks() {
+        cameraService.onSegmentFinished = { _, _ in
+            videoStorage.refresh()
         }
-        videoStorage.refresh()
+        cameraService.onRecordingStopped = { reason in
+            if reason != .user && reason != .volumeKey {
+                alertMessage = stopReasonMessage(reason)
+            }
+            videoStorage.refresh()
+        }
     }
-}
+
     private func stopReasonMessage(_ reason: RecordingStopReason) -> String {
         switch reason {
         case .maxDuration: return "已达到最长录制时间。"

@@ -1,64 +1,64 @@
-进口 AVFoundation
-进口 结合
+import AVFoundation
+import Combine
 
-最后的 班级 照相机服务:NSObject，ObservableObject {
-    @已发布 定义变量 正在记录 = 错误的
-    @已发布 定义变量 isSessionRunning = 错误的
-    @已发布 定义变量 摄影位置:摄像机位置=。背部
-    @已发布 定义变量 isMicrophoneEnabled = 真实的
-    @已发布 定义变量 消逝秒 = 0
-    @已发布 定义变量 currentSegmentIndex = 1
-    @已发布 定义变量 错误消息:字符串？
-    @已发布 定义变量 质量设置= VideoQualitySettings()
-    @已发布 定义变量 lowLightBoostEnabled = 真实的
+final class CameraService: NSObject, ObservableObject {
+    @Published var isRecording = false
+    @Published var isSessionRunning = false
+    @Published var cameraPosition: CameraPosition = .back
+    @Published var isMicrophoneEnabled = true
+    @Published var elapsedSeconds = 0
+    @Published var currentSegmentIndex = 1
+    @Published var errorMessage: String?
+    @Published var qualitySettings = VideoQualitySettings()
+    @Published var lowLightBoostEnabled = true
 
-    定义变量 分段持续时间:时间间隔=600
-    定义变量 maxRecordingDuration:时间间隔？
-    定义变量 on segment完成: (@MainActor(URL，Int) -> Void)？
-    定义变量 onRecordingStopped: (@MainActor(recordingstopfreason)-> Void)？
+    var segmentDuration: TimeInterval = 600
+    var maxRecordingDuration: TimeInterval?
+    var onSegmentFinished: (@MainActor (URL, Int) -> Void)?
+    var onRecordingStopped: (@MainActor (RecordingStopReason) -> Void)?
 
-    私人的 让 会议= AVCaptureSession()
-    私人的 让 电影输出= AVCaptureMovieFileOutput()
-    私人的 让 会话队列= DispatchQueue(标签:" com.offscreen.camera.session ")
+    private let session = AVCaptureSession()
+    private let movieOutput = AVCaptureMovieFileOutput()
+    private let sessionQueue = DispatchQueue(label: "com.offscreen.camera.session")
 
-    私人的 定义变量 视频输入:AVCaptureDeviceInput？
-    私人的 定义变量 音频输入:AVCaptureDeviceInput？
-    私人的 定义变量 时间可取消:可以取消吗？
-    私人的 定义变量 分段计时器:定时器？
-    私人的 定义变量 记录开始日期:日期？
-    私人的 定义变量 当前输出URL:网址？
-    私人的 定义变量 旋转分段 = 错误的
-    私人的 定义变量 pendingStopReason:记录停止原因=。用户
-    私人的 定义变量 makeOutputURL: (@MainActor()->网址)？
+    private var videoInput: AVCaptureDeviceInput?
+    private var audioInput: AVCaptureDeviceInput?
+    private var timerCancellable: AnyCancellable?
+    private var segmentTimer: Timer?
+    private var recordingStartedAt: Date?
+    private var currentOutputURL: URL?
+    private var isRotatingSegment = false
+    private var pendingStopReason: RecordingStopReason = .user
+    private var makeOutputURL: (@MainActor () -> URL)?
 
-    推翻 初始化() {
-        极好的。初始化()
+    override init() {
+        super.init()
     }
 
-    功能 请求权限() 异步ˌ非同步(asynchronous)->布尔{
-        让 照相机拍摄的 = 等待请求访问(为: 。录像)
-        防护装置照相机拍摄的其他 {
-error message = CameraServiceError。权限被拒绝("相机权限被拒绝,请到系统设置中开启。")。本地化描述
-            返回 错误的
+    func requestPermissions() async -> Bool {
+        let cameraGranted = await requestAccess(for: .video)
+        guard cameraGranted else {
+            errorMessage = CameraServiceError.permissionDenied("相机权限被拒绝，请到系统设置中开启。").localizedDescription
+            return false
         }
 
-        如果isMicrophoneEnabled {
-            让 micGranted = 等待请求访问(为: 。声音的)
-            如果！micGranted {
-error message = CameraServiceError。权限被拒绝("麦克风权限被拒绝,已改为静音录像。")。本地化描述
-isMicrophoneEnabled =错误的
+        if isMicrophoneEnabled {
+            let micGranted = await requestAccess(for: .audio)
+            if !micGranted {
+                errorMessage = CameraServiceError.permissionDenied("麦克风权限被拒绝，已改为静音录像。").localizedDescription
+                isMicrophoneEnabled = false
             }
         }
 
-        返回 真实的
+        return true
     }
 
-    功能 准备会话() 异步ˌ非同步(asynchronous) 投 {
-        尝试 等待withCheckedThrowingContinuation {(continuation:checked continuation < Void，Error >)在
-会话队列。异步ˌ非同步(asynchronous) {
-                做 {
-                    尝试 自己。配置会话()
-继续。简历()
+    func prepareSession() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            sessionQueue.async {
+                do {
+                    try self.configureSession()
+                    continuation.resume()
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -196,8 +196,8 @@ isMicrophoneEnabled =错误的
         segmentTimer?.invalidate()
         segmentTimer = Timer.scheduledTimer(withTimeInterval: segmentDuration, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-    self?.rotateSegmentNow()
-}
+                self?.rotateSegmentNow()
+            }
         }
     }
 
