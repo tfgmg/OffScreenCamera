@@ -14,8 +14,8 @@ final class CameraService: NSObject, ObservableObject {
 
     var segmentDuration: TimeInterval = 600
     var maxRecordingDuration: TimeInterval?
-    var onSegmentFinished: ((URL, Int) -> Void)?
-    var onRecordingStopped: ((RecordingStopReason) -> Void)?
+    var onSegmentFinished: (@MainActor (URL, Int) -> Void)?
+    var onRecordingStopped: (@MainActor (RecordingStopReason) -> Void)?
 
     private let session = AVCaptureSession()
     private let movieOutput = AVCaptureMovieFileOutput()
@@ -29,7 +29,7 @@ final class CameraService: NSObject, ObservableObject {
     private var currentOutputURL: URL?
     private var isRotatingSegment = false
     private var pendingStopReason: RecordingStopReason = .user
-    private var makeOutputURL: (() -> URL)?
+    private var makeOutputURL: (@MainActor () -> URL)?
 
     override init() {
         super.init()
@@ -67,7 +67,7 @@ final class CameraService: NSObject, ObservableObject {
         await startSessionIfNeeded()
     }
 
-    func startRecordingSession(makeURL: @escaping () -> URL) async throws {
+    func startRecordingSession(makeURL: @MainActor @escaping () -> URL) async throws {
         guard !isRecording else { return }
         makeOutputURL = makeURL
         currentSegmentIndex = 1
@@ -76,7 +76,7 @@ final class CameraService: NSObject, ObservableObject {
             try await prepareSession()
         }
 
-        let url = makeURL()
+        let url = await MainActor.run { makeURL() }
         try await startSegmentRecording(to: url)
 
         isRecording = true
@@ -399,6 +399,7 @@ final class CameraService: NSObject, ObservableObject {
         finalizeStop(reason: pendingStopReason)
     }
 
+    @MainActor
     private func finalizeStop(reason: RecordingStopReason) {
         isRecording = false
         PowerGuard.setRecordingActive(false)
@@ -417,7 +418,9 @@ extension CameraService: AVCaptureFileOutputRecordingDelegate {
         didStartRecordingTo fileURL: URL,
         from connections: [AVCaptureConnection]
     ) {
-        Task { @MainActor in self.errorMessage = nil }
+        Task { @MainActor [weak self] in
+            self?.errorMessage = nil
+        }
     }
 
     nonisolated func fileOutput(
@@ -426,8 +429,8 @@ extension CameraService: AVCaptureFileOutputRecordingDelegate {
         from connections: [AVCaptureConnection],
         error: Error?
     ) {
-        Task { @MainActor in
-            self.handleSegmentFinished(url: outputFileURL, error: error)
+        Task { @MainActor [weak self] in
+            self?.handleSegmentFinished(url: outputFileURL, error: error)
         }
     }
 }

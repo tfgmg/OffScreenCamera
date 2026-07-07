@@ -4,8 +4,8 @@ import SwiftUI
 struct OffScreenCameraApp: App {
     @StateObject private var cameraService = CameraService()
     @StateObject private var videoStorage = VideoStorage()
-    @StateObject private var settings = AppSettings.shared
-    @StateObject private var appLock = AppLockService.shared
+    @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var appLock = AppLockService.shared
 
     var body: some Scene {
         WindowGroup {

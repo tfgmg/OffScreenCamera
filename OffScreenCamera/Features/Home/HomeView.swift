@@ -201,8 +201,10 @@ struct HomeView: View {
         if cameraService.isRecording {
             cameraService.stopRecording(reason: .user)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                cameraService.tearDownSession()
-                videoStorage.refresh()
+                Task { @MainActor in
+                    cameraService.tearDownSession()
+                    videoStorage.refresh()
+                }
             }
         } else {
             cameraService.tearDownSession()

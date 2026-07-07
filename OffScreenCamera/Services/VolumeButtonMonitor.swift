@@ -4,8 +4,8 @@ import MediaPlayer
 import UIKit
 
 final class VolumeButtonMonitor: ObservableObject {
-    var onVolumeUpTriple: (() -> Void)?
-    var onVolumeDownTriple: (() -> Void)?
+    var onVolumeUpTriple: (@MainActor () -> Void)?
+    var onVolumeDownTriple: (@MainActor () -> Void)?
 
     private var volumeView: MPVolumeView?
     private var observation: NSKeyValueObservation?
@@ -72,8 +72,10 @@ final class VolumeButtonMonitor: ObservableObject {
         if pressTimestamps.count >= 3 {
             pressTimestamps.removeAll()
             switch direction {
-            case .up: onVolumeUpTriple?()
-            case .down: onVolumeDownTriple?()
+            case .up:
+                Task { @MainActor in self.onVolumeUpTriple?() }
+            case .down:
+                Task { @MainActor in self.onVolumeDownTriple?() }
             }
         }
     }

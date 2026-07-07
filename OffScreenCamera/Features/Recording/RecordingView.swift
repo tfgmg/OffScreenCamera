@@ -90,8 +90,10 @@ struct RecordingView: View {
         }
         cameraService.stopRecording(reason: reason)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            videoStorage.refresh()
-            dismiss()
+            Task { @MainActor in
+                videoStorage.refresh()
+                dismiss()
+            }
         }
     }
 }

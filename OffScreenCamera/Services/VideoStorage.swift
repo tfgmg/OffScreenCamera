@@ -139,9 +139,3 @@ private extension PHAuthorizationStatus {
         }
     }
 }
-
-private extension CMTime {
-    var seconds: TimeInterval {
-        CMTimeGetSeconds(self)
-    }
-}
