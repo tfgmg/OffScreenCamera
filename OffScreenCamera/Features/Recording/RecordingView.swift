@@ -39,12 +39,12 @@ struct RecordingView: View {
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .onAppear {
-            volumeMonitor.onVolumeDownTriple = {
+            volumeMonitor.onVolumeDownTriple = { @MainActor in
                 stopAndDismiss(reason: .volumeKey)
             }
             volumeMonitor.start()
 
-            protection.setupInterruptionHandler {
+            protection.setupInterruptionHandler { @MainActor in
                 stopAndDismiss(reason: .interruption)
             }
 
@@ -83,17 +83,17 @@ struct RecordingView: View {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
+    @MainActor
     private func stopAndDismiss(reason: RecordingStopReason) {
         guard cameraService.isRecording else {
             dismiss()
             return
         }
         cameraService.stopRecording(reason: reason)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            Task { @MainActor in
-                videoStorage.refresh()
-                dismiss()
-            }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            videoStorage.refresh()
+            dismiss()
         }
     }
 }

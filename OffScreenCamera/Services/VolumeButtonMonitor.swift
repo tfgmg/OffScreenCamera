@@ -3,6 +3,7 @@ import Combine
 import MediaPlayer
 import UIKit
 
+@MainActor
 final class VolumeButtonMonitor: ObservableObject {
     var onVolumeUpTriple: (@MainActor () -> Void)?
     var onVolumeDownTriple: (@MainActor () -> Void)?
@@ -37,7 +38,7 @@ final class VolumeButtonMonitor: ObservableObject {
 
         observation = session.observe(\.outputVolume, options: [.new, .old]) { [weak self] _, change in
             guard let newValue = change.newValue, let oldValue = change.oldValue else { return }
-            DispatchQueue.main.async {
+            Task { @MainActor [weak self] in
                 self?.handleVolumeChange(from: oldValue, to: newValue)
             }
         }
@@ -72,17 +73,16 @@ final class VolumeButtonMonitor: ObservableObject {
         if pressTimestamps.count >= 3 {
             pressTimestamps.removeAll()
             switch direction {
-            case .up:
-                Task { @MainActor [weak self] in self?.onVolumeUpTriple?() }
-            case .down:
-                Task { @MainActor [weak self] in self?.onVolumeDownTriple?() }
+            case .up: onVolumeUpTriple?()
+            case .down: onVolumeDownTriple?()
             }
         }
     }
 
     private func restoreVolume(_ volume: Float) {
         guard let slider = volumeView?.subviews.compactMap({ $0 as? UISlider }).first else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 10_000_000)
             slider.value = volume
         }
     }

@@ -79,12 +79,14 @@ final class CameraService: NSObject, ObservableObject {
         let url = await MainActor.run { makeURL() }
         try await startSegmentRecording(to: url)
 
-        isRecording = true
-        recordingStartedAt = Date()
-        elapsedSeconds = 0
-        PowerGuard.setRecordingActive(true)
-        startElapsedTimer()
-        scheduleSegmentRotation()
+        await MainActor.run {
+            isRecording = true
+            recordingStartedAt = Date()
+            elapsedSeconds = 0
+            PowerGuard.setRecordingActive(true)
+            startElapsedTimer()
+            scheduleSegmentRotation()
+        }
     }
 
     func stopRecording(reason: RecordingStopReason = .user) {
@@ -150,12 +152,14 @@ final class CameraService: NSObject, ObservableObject {
                 self.session.stopRunning()
             }
         }
-        isSessionRunning = false
-        isRecording = false
-        PowerGuard.setRecordingActive(false)
-        stopElapsedTimer()
-        recordingStartedAt = nil
-        makeOutputURL = nil
+        Task { @MainActor in
+            isSessionRunning = false
+            isRecording = false
+            PowerGuard.setRecordingActive(false)
+            stopElapsedTimer()
+            recordingStartedAt = nil
+            makeOutputURL = nil
+        }
     }
 
     private func startSegmentRecording(to url: URL) async throws {

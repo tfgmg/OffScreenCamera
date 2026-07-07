@@ -32,7 +32,9 @@ struct HomeView: View {
             }
             .navigationTitle("黑屏录像")
             .navigationBarTitleDisplayMode(.inline)
-            .fullScreenCover(isPresented: $isRecordingPresented, onDismiss: handleRecordingDismiss) {
+            .fullScreenCover(isPresented: $isRecordingPresented, onDismiss: {
+                Task { @MainActor in handleRecordingDismiss() }
+            }) {
                 RecordingView()
             }
             .alert("提示", isPresented: Binding(
@@ -46,9 +48,9 @@ struct HomeView: View {
             .onAppear {
                 settings.applyToCameraService(cameraService)
                 videoStorage.refresh()
-                volumeMonitor.onVolumeUpTriple = {
+                volumeMonitor.onVolumeUpTriple = { @MainActor in
                     guard !cameraService.isRecording, !isPreparing, !isRecordingPresented else { return }
-                    Task { await startRecordingFlow() }
+                    Task { @MainActor in await startRecordingFlow() }
                 }
                 volumeMonitor.start()
             }
@@ -83,7 +85,7 @@ struct HomeView: View {
             .pickerStyle(.segmented)
             .disabled(isPreparing || cameraService.isRecording)
             .onChange(of: settings.cameraPosition) { _, newValue in
-                Task {
+                Task { @MainActor in
                     do { try await cameraService.switchCamera(to: newValue) }
                     catch { alertMessage = error.localizedDescription }
                 }
@@ -96,7 +98,7 @@ struct HomeView: View {
             .tint(.green)
             .disabled(isPreparing || cameraService.isRecording)
             .onChange(of: settings.isMicrophoneEnabled) { _, enabled in
-                Task {
+                Task { @MainActor in
                     do { try await cameraService.setMicrophoneEnabled(enabled) }
                     catch { alertMessage = error.localizedDescription }
                 }
@@ -109,7 +111,7 @@ struct HomeView: View {
     private var actionButtons: some View {
         VStack(spacing: 12) {
             Button {
-                Task { await startRecordingFlow() }
+                Task { @MainActor in await startRecordingFlow() }
             } label: {
                 HStack {
                     if isPreparing { ProgressView().tint(.black) }
@@ -124,7 +126,7 @@ struct HomeView: View {
             .disabled(isPreparing)
 
             Button {
-                Task { await startRecordingFlow() }
+                Task { @MainActor in await startRecordingFlow() }
             } label: {
                 Label("息屏并开始录制", systemImage: "moon.zzz.fill")
                     .frame(maxWidth: .infinity)
@@ -166,7 +168,7 @@ struct HomeView: View {
 
         do {
             try await cameraService.prepareSession()
-            try await cameraService.startRecordingSession {
+            try await cameraService.startRecordingSession { @MainActor in
                 videoStorage.makeOutputURL(segmentIndex: cameraService.currentSegmentIndex)
             }
             isRecordingPresented = true
@@ -177,10 +179,10 @@ struct HomeView: View {
 
     @MainActor
     private func setupRecordingCallbacks() {
-        cameraService.onSegmentFinished = { _, _ in
+        cameraService.onSegmentFinished = { @MainActor _, _ in
             videoStorage.refresh()
         }
-        cameraService.onRecordingStopped = { reason in
+        cameraService.onRecordingStopped = { @MainActor reason in
             if reason != .user && reason != .volumeKey {
                 alertMessage = stopReasonMessage(reason)
             }
@@ -198,14 +200,14 @@ struct HomeView: View {
         }
     }
 
+    @MainActor
     private func handleRecordingDismiss() {
         if cameraService.isRecording {
             cameraService.stopRecording(reason: .user)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                Task { @MainActor in
-                    cameraService.tearDownSession()
-                    videoStorage.refresh()
-                }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                cameraService.tearDownSession()
+                videoStorage.refresh()
             }
         } else {
             cameraService.tearDownSession()

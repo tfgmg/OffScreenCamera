@@ -109,8 +109,8 @@ struct VideoLibraryView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
-            Button("合并") { Task { await mergeSelected() } }
-            Button("导出") { Task { await exportSelected() } }
+            Button("合并") { Task { @MainActor in await mergeSelected() } }
+            Button("导出") { Task { @MainActor in await exportSelected() } }
             Button("分享") { shareSelected() }
             Button("删除", role: .destructive) { deleteSelected() }
         }

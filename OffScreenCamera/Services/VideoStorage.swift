@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import CoreMedia
 import Foundation
 import Photos
 
@@ -23,9 +24,12 @@ final class VideoStorage: ObservableObject {
     }
 
     func refresh() {
-        Task {
-            await loadVideos()
-        }
+        Task { @MainActor in await loadVideos() }
+    }
+
+    private func loadDuration(from asset: AVURLAsset) async -> TimeInterval? {
+        guard let time = try? await asset.load(.duration), time.isValid else { return nil }
+        return time.seconds
     }
 
     func loadVideos() async {
@@ -52,7 +56,7 @@ final class VideoStorage: ObservableObject {
                 else { continue }
 
                 let asset = AVURLAsset(url: url)
-                let duration = try? await asset.load(.duration).seconds
+                let duration = await loadDuration(from: asset)
 
                 loaded.append(RecordedVideo(
                     id: UUID(),
@@ -116,7 +120,7 @@ final class VideoStorage: ObservableObject {
 
         let values = try outputURL.resourceValues(forKeys: [.creationDateKey, .fileSizeKey])
         let asset = AVURLAsset(url: outputURL)
-        let duration = try? await asset.load(.duration).seconds
+        let duration = await loadDuration(from: asset)
         let merged = RecordedVideo(
             id: UUID(),
             url: outputURL,

@@ -92,7 +92,7 @@ struct AppLockView: View {
 
             if AppSettings.shared.biometricEnabled {
                 Button("使用 Face ID / 指纹") {
-                    Task {
+                    Task { @MainActor in
                         if await appLock.unlockWithBiometrics() {
                             onUnlocked()
                         }
